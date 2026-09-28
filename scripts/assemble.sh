@@ -43,7 +43,7 @@ set -euo pipefail
 # them pinned); Windows comes from the immutable GyanD/codexffmpeg release tag.
 FFMPEG_PINS=(
 	"linux-amd64|7.0.2|https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz|abda8d77ce8309141f83ab8edf0596834087c52467f6badf376a6a2a4c87cf67"
-	"linux-arm64|7.0.2|https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz|f4149bb2b0784e30e99bdda85471c9b5930d3402014e934a5088b41d0f7201b1"
+	"linux-arm64|7.0.2|https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz|f4149bb2b0784e30e99bdda85471c9b5930d3402014e934a5098b41d0f7201b1"
 	"windows|8.1.2|https://github.com/GyanD/codexffmpeg/releases/download/8.1.2/ffmpeg-8.1.2-essentials_build.zip|db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec"
 )
 
