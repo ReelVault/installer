@@ -70,7 +70,8 @@ function Assert-Checksum($repo, $tag, $asset, $path) {
 		return
 	}
 
-	$pattern = "^[0-9a-fA-F]{64}\s+\*?" + [regex]::Escape($asset) + "\s*$"
+	# Tolerate both "hash  name" and "hash  ./name" lines.
+	$pattern = "^[0-9a-fA-F]{64}\s+\*?(\./)?" + [regex]::Escape($asset) + "\s*$"
 	$line = (Get-Content $sums) | Where-Object { $_ -match $pattern } | Select-Object -First 1
 	if (-not $line) { throw "SHA256SUMS.txt of $repo $tag has no entry for $asset - refusing to install" }
 

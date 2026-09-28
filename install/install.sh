@@ -133,7 +133,8 @@ verify_checksum() {
 	fetch "https://github.com/${repo}/releases/download/${tag}/SHA256SUMS.txt" "$sums" || die "could not download SHA256SUMS.txt for ${asset} — refusing to install unverified"
 
 	local expected
-	expected="$(grep -E "^[0-9a-fA-F]{64}[[:space:]]+\*?${asset}\$" "${sums}" | cut -d' ' -f1 | head -1)"
+	# Tolerate both "hash  name" and "hash  ./name" lines.
+	expected="$(grep -E "^[0-9a-fA-F]{64}[[:space:]]+\*?(\./)?${asset}\$" "${sums}" | cut -d' ' -f1 | head -1)"
 	if [[ -z "$expected" ]]; then
 		die "SHA256SUMS.txt of ${repo} ${tag} has no entry for ${asset} — refusing to install"
 	fi

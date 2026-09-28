@@ -104,7 +104,7 @@ verify_checksum() { # <repo> <tag> <asset> <file>
 	local sums="$WORK/sums-$3"
 	fetch "https://github.com/$1/releases/download/$2/SHA256SUMS.txt" "$sums"
 	local expected
-	expected="$(grep -E "^[0-9a-fA-F]{64}[[:space:]]+\*?$3\$" "$sums" | cut -d' ' -f1 | head -1)"
+	expected="$(grep -E "^[0-9a-fA-F]{64}[[:space:]]+\*?(\./)?$3\$" "$sums" | cut -d' ' -f1 | head -1)"
 	[ -n "$expected" ] || die "SHA256SUMS.txt of $1 $2 has no entry for $3"
 	local actual
 	actual="$(sha256_of "$4")"

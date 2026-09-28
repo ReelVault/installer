@@ -160,7 +160,8 @@ verify_checksums() { # <repo> <version> <asset-name> <file>
 	local sums="$WORK/sums-$3"
 	fetch "https://github.com/$1/releases/download/v$2/SHA256SUMS.txt" "$sums"
 	local expected
-	expected="$(grep -E "^[0-9a-fA-F]{64}[[:space:]]+\*?$3\$" "$sums" | cut -d' ' -f1 | head -1)"
+	# Tolerate both "hash  name" and "hash  ./name" lines.
+	expected="$(grep -E "^[0-9a-fA-F]{64}[[:space:]]+\*?(\./)?$3\$" "$sums" | cut -d' ' -f1 | head -1)"
 	[ -n "$expected" ] || die "SHA256SUMS.txt of $1 v$2 has no entry for $3"
 	local actual
 	actual="$(sha256sum "$4" | cut -d' ' -f1)"
@@ -220,10 +221,10 @@ echo "    web:     ${WEB_VERSION} (${WEB_REPO})"
 echo "    full:    ${FULL}"
 
 echo "==> Fetching component artifacts"
-LINUX_X64_ARCHIVE="$WORK/server-linux-x64.tar.gz"
-LINUX_ARM64_ARCHIVE="$WORK/server-linux-arm64.tar.gz"
-WINDOWS_ARCHIVE="$WORK/server-windows-x64.zip"
-# Each --server-archive override applies to the platform matched by file name.
+# Empty = download from the release; --server-archive fills the matching slot.
+LINUX_X64_ARCHIVE=""
+LINUX_ARM64_ARCHIVE=""
+WINDOWS_ARCHIVE=""
 for archive in "${SERVER_ARCHIVES[@]:-}"; do
 	[ -n "$archive" ] || continue
 	case "$(basename "$archive")" in
