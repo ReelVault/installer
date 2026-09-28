@@ -24,9 +24,11 @@ bundle assembler, and the Docker image. The server code lives in
   one offline file (`--full` adds a pinned static ffmpeg/ffprobe into `bin/`).
   Component releases never ship ffmpeg — only bundles do.
 - Releases are built by CI: pushing a `v*` tag (or dispatching the workflow)
-  in each component repository builds and publishes its artifacts. A scheduled
-  workflow in this repository assembles a new bundle whenever both components
-  have versions that are not bundled yet. Nothing here needs manual updating.
+  in each component repository builds and publishes its artifacts. In this
+  repository, bundles are built **only** when you push a `v*` tag: the workflow
+  resolves the latest server and web releases at that moment, packs both
+  variants and attaches them (plus `Dockerfile`, `docker-compose.yml` and the
+  nginx config) to that release. Nothing here needs manual updating.
 
 ## Automated release flow
 

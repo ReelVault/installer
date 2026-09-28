@@ -258,6 +258,11 @@ TARGETS=(
 	"windows-x64|$WORK/server-windows-x64.zip|zip|windows"
 )
 
+# The -full variant keeps distinct file names so both variants of the same
+# component pair can live side by side (and in one release).
+VARIANT_SUFFIX=""
+[ "$FULL" = "true" ] && VARIANT_SUFFIX="-full"
+
 for TARGET in "${TARGETS[@]}"; do
 	IFS='|' read -r NAME ARCHIVE KIND FFMPEG_SRC <<<"$TARGET"
 	echo "==> Assembling ${NAME}"
@@ -290,16 +295,16 @@ for TARGET in "${TARGETS[@]}"; do
 	fi
 
 	if [ "$KIND" = tar ]; then
-		out="$OUT_DIR/${BUNDLE_BASE}-${NAME}.tar.gz"
+		out="$OUT_DIR/${BUNDLE_BASE}-${NAME}${VARIANT_SUFFIX}.tar.gz"
 		tar -czf "$out" -C "$WORK/$NAME" ReelVault
 	else
-		out="$OUT_DIR/${BUNDLE_BASE}-${NAME}.zip"
+		out="$OUT_DIR/${BUNDLE_BASE}-${NAME}${VARIANT_SUFFIX}.zip"
 		ZIP_DIR "$out" "$APP"
 	fi
 	echo "    -> $(basename "$out")"
 done
 
-# 1. Bare names in SHA256SUMS.txt: install.sh and the update service match exactly.
+# Bare names in SHA256SUMS.txt: install.sh and the update service match exactly.
 echo "==> Checksums"
 (
 	cd "$OUT_DIR"
@@ -308,19 +313,6 @@ echo "==> Checksums"
 	[ "${#files[@]}" -eq "${#TARGETS[@]}" ] || { echo "error: expected ${#TARGETS[@]} bundles, found ${#files[@]}" >&2; exit 1; }
 	sha256sum "${files[@]}" >SHA256SUMS.txt
 )
-
-# 2. Remove leftovers before building (right after OUT_DIR is created)
-rm -f "$OUT_DIR/${BUNDLE_BASE}"-*.tar.gz "$OUT_DIR/${BUNDLE_BASE}"-*.zip "$OUT_DIR/SHA256SUMS.txt"
-
-# 3. Anchored versions
-[[ "$SERVER_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]] || die "server version must look like 1.2.3 (got '$SERVER_VERSION')"
-[[ "$WEB_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]] || die "web version must look like 0.2.3 (got '$WEB_VERSION')"
-
-# 4. python3 zip fallback with a relative path
-ZIP_DIR() { (cd "$(dirname "$2")" && python3 -m zipfile -c "$1" "$(basename "$2")"); }
-
-# 5. curl with retries
-fetch() { curl -fsSL --retry 3 -o "$2" "$1"; }
 
 echo
 echo "Done. Bundle assets are in ${OUT_DIR}:"

@@ -1,0 +1,125 @@
+name: Release
+
+# The ONLY workflow that builds bundle artifacts — and it runs exclusively
+# when a v* release tag is pushed (or manually from the Actions tab). It
+# resolves the LATEST server and web releases from their repositories, packs
+# them into fresh-install bundles in BOTH variants (default and -full with
+# bundled ffmpeg) and attaches everything to this release. The repository
+# itself never needs updating when a component ships a new version.
+#
+# Recommended tag convention: v<serverV>-web<webV> (e.g. v1.0.1-web0.2.0).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing v* tag to attach the bundles to (empty = build only)"
+        required: false
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    name: Assemble and publish bundles
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax check
+        run: |
+          bash -n install/install.sh
+          bash -n scripts/assemble.sh
+          bash -n scripts/build-docker.sh
+
+      - name: Resolve the latest component releases
+        id: versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          server="$(gh api repos/ReelVault/reelvault/releases/latest --jq .tag_name)"
+          web="$(gh api repos/ReelVault/website/releases/latest --jq .tag_name)"
+          echo "server=${server#v}" >> "$GITHUB_OUTPUT"
+          echo "web=${web#v}" >> "$GITHUB_OUTPUT"
+          echo "Resolved server ${server}, web ${web}"
+
+      # Smoke-test the installer against fabricated artifacts before building
+      # the real bundles (the same guarantees the old push-CI provided).
+      - name: Smoke-test the installer
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+
+          web="$work/web-dist"
+          mkdir -p "$web"
+          echo '<html>ReelVault</html>' > "$web/index.html"
+          ( cd "$web" && zip -qr "$work/web.zip" index.html )
+
+          app="$work/staging/ReelVault"
+          mkdir -p "$app/bun" "$app/server"
+          printf '#!/bin/sh\necho bun\n' > "$app/bun/bun"
+          echo '{"version":"0.0.0"}' > "$app/server/package.json"
+          printf '#!/usr/bin/env bash\necho ReelVault\n' > "$app/start.sh"
+          chmod +x "$app/start.sh" "$app/bun/bun"
+          tar -czf "$work/server.tar.gz" -C "$work/staging" ReelVault
+
+          target="$work/app"
+          XDG_CONFIG_HOME="$work/xdg" bash install/install.sh \
+            --server-file "$work/server.tar.gz" \
+            --web-file "$work/web.zip" \
+            --no-service --remote --port 8080 --dir "$target"
+
+          test -x "$target/start.sh"
+          test -f "$target/web/index.html"
+          grep -q 'APP_PORT="8080"' "$target/settings.env"
+
+      - name: Assemble the default bundles
+        run: >
+          ./scripts/assemble.sh
+          "${{ steps.versions.outputs.server }}"
+          "${{ steps.versions.outputs.web }}"
+          --out dist/default
+
+      - name: Assemble the -full bundles (bundled ffmpeg)
+        run: >
+          ./scripts/assemble.sh
+          "${{ steps.versions.outputs.server }}"
+          "${{ steps.versions.outputs.web }}"
+          --full
+          --out dist/full
+
+      - name: Collect the release assets
+        run: |
+          mkdir -p dist/bundles
+          cp dist/default/ReelVault-* dist/full/ReelVault-* dist/bundles/
+          cat dist/default/SHA256SUMS.txt dist/full/SHA256SUMS.txt > dist/bundles/SHA256SUMS.txt
+          # Everything except install/ — the installers are fetched straight
+          # from this repository and rarely change.
+          cp Dockerfile docker-compose.yml dist/bundles/
+          cp nginx/reelvault.conf dist/bundles/reelvault.nginx.conf
+          ls -1 dist/bundles
+
+      - name: Publish to the release
+        if: github.ref_type == 'tag' || inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            && gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/bundles/* \
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+                 --title "ReelVault v${{ steps.versions.outputs.server }} + web v${{ steps.versions.outputs.web }}" \
+                 --generate-notes dist/bundles/*
+
+      - name: Upload as build artifacts (no tag — manual inspection)
+        if: github.ref_type != 'tag' && inputs.tag == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundles
+          path: dist/bundles/*
