@@ -1,0 +1,149 @@
+name: Installers
+
+# Runs only when the installer scripts change — the rest of CI is unaffected.
+# Manual runs are possible from the Actions tab.
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "install/**"
+      - "scripts/**"
+      - "Dockerfile"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "install/**"
+      - "scripts/**"
+      - "Dockerfile"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux installer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax check
+        run: |
+          bash -n install/install.sh
+          bash -n scripts/assemble.sh
+          bash -n scripts/build-docker.sh
+
+      # install.sh is run for real against fabricated component artifacts: the
+      # happy path, --remote/--port, and --uninstall keeping data/.
+      - name: Compose an install from component artifacts
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          app="$work/staging/ReelVault"
+          mkdir -p "$app/bun" "$app/server"
+          printf '#!/bin/sh\necho bun\n' > "$app/bun/bun"
+          echo '{"version":"0.0.0"}' > "$app/server/package.json"
+          printf '#!/usr/bin/env bash\necho ReelVault\n' > "$app/start.sh"
+          chmod +x "$app/start.sh" "$app/bun/bun"
+          tar -czf "$work/server.tar.gz" -C "$work/staging" ReelVault
+
+          web="$work/web-dist"
+          mkdir -p "$web"
+          echo '<html>ReelVault</html>' > "$web/index.html"
+          ( cd "$web" && zip -qr "$work/web.zip" index.html )
+
+          target="$work/app"
+          XDG_CONFIG_HOME="$work/xdg" bash install/install.sh \
+            --server-file "$work/server.tar.gz" \
+            --web-file "$work/web.zip" \
+            --no-service --remote --port 8080 --dir "$target"
+
+          test -x "$target/start.sh"
+          test -x "$target/bun/bun"
+          test -f "$target/web/index.html"
+          grep -q 'APP_HOST="0.0.0.0"' "$target/settings.env"
+          grep -q 'APP_PORT="8080"' "$target/settings.env"
+
+          mkdir -p "$target/data"
+          : > "$target/data/reelvault.sqlite"
+          XDG_CONFIG_HOME="$work/xdg" bash install/install.sh --uninstall --dir "$target"
+          test -f "$target/data/reelvault.sqlite"
+          test ! -e "$target/start.sh"
+          test ! -e "$target/web"
+
+      - name: Refuse a web release without index.html at its root
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          app="$work/staging/ReelVault"
+          mkdir -p "$app/bun" "$app/server"
+          printf '#!/bin/sh\necho bun\n' > "$app/bun/bun"
+          echo '{}' > "$app/server/package.json"
+          printf '#!/usr/bin/env bash\n' > "$app/start.sh"
+          chmod +x "$app/start.sh" "$app/bun/bun"
+          tar -czf "$work/server.tar.gz" -C "$work/staging" ReelVault
+
+          web="$work/web-dist"
+          mkdir -p "$web/nested"
+          echo '<html>ReelVault</html>' > "$web/nested/index.html"
+          ( cd "$web" && zip -qr "$work/bad-web.zip" nested )
+
+          if XDG_CONFIG_HOME="$work/xdg" bash install/install.sh \
+            --server-file "$work/server.tar.gz" \
+            --web-file "$work/bad-web.zip" \
+            --no-service --dir "$work/app" >/dev/null 2>&1; then
+            echo "::error::the installer accepted a web release without a root index.html"
+            exit 1
+          fi
+
+  assemble:
+    name: Bundle assembler
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # assembles all three platform bundles from fabricated component
+      # artifacts and asserts the combined layout (server + web, no bin/
+      # without --full beyond the fabricated pair).
+      - name: Assemble a bundle from local artifacts
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+
+          web="$work/web-dist"
+          mkdir -p "$web"
+          echo '<html>ReelVault</html>' > "$web/index.html"
+          ( cd "$web" && zip -qr "$work/web.zip" index.html )
+
+          for platform in linux-x64 linux-arm64 windows-x64; do
+            app="$work/staging-$platform/ReelVault"
+            mkdir -p "$app/bun" "$app/server"
+            printf '#!/bin/sh\necho bun\n' > "$app/bun/bun"
+            echo '{"version":"0.0.0"}' > "$app/server/package.json"
+            printf '#!/usr/bin/env bash\necho ReelVault\n' > "$app/start.sh"
+            chmod +x "$app/start.sh" "$app/bun/bun"
+            if [ "$platform" = windows-x64 ]; then
+              ( cd "$work/staging-$platform" && zip -qr "$work/server-$platform.zip" ReelVault )
+            else
+              tar -czf "$work/server-$platform.tar.gz" -C "$work/staging-$platform" ReelVault
+            fi
+          done
+
+          out="$work/bundles"
+          bash scripts/assemble.sh 0.0.0 0.0.0 \
+            --server-archive "$work/server-linux-x64.tar.gz" \
+            --server-archive "$work/server-linux-arm64.tar.gz" \
+            --server-archive "$work/server-windows-x64.zip" \
+            --web-zip "$work/web.zip" \
+            --skip-checksums \
+            --out "$out"
+
+          mkdir -p "$work/verify"
+          tar -xzf "$out/ReelVault-0.0.0-web0.0.0-linux-x64.tar.gz" -C "$work/verify"
+          test -f "$work/verify/ReelVault/server/package.json"
+          test -f "$work/verify/ReelVault/web/index.html"
+          test -f "$work/verify/ReelVault/start.sh"
+          test -f "$out/SHA256SUMS.txt"

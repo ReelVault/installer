@@ -1,0 +1,65 @@
+name: Assemble bundles
+
+# Keeps the optional fresh-install bundles current. On a schedule (and on
+# demand) it resolves the latest server and web releases; when the bundle for
+# that pair does not exist yet, it assembles one and publishes it. Nothing
+# here is required for regular installs — the installers compose from the
+# component releases directly.
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    name: Assemble and publish a bundle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve the latest component versions
+        id: versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          server="$(gh api repos/ReelVault/reelvault/releases/latest --jq .tag_name)"
+          web="$(gh api repos/ReelVault/website/releases/latest --jq .tag_name)"
+          echo "server=${server#v}" >> "$GITHUB_OUTPUT"
+          echo "web=${web#v}" >> "$GITHUB_OUTPUT"
+          echo "Resolved server ${server}, web ${web}"
+
+      - name: Skip when this bundle already exists
+        id: existing
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "v${{ steps.versions.outputs.server }}-web${{ steps.versions.outputs.web }}" --repo "$GITHUB_REPOSITORY" >/dev/null
+          echo "Bundle for this pair already exists — nothing to do"
+
+      - name: Assemble the bundle
+        if: steps.existing.outcome != 'success'
+        run: ./scripts/assemble.sh "${{ steps.versions.outputs.server }}" "${{ steps.versions.outputs.web }}" --full
+
+      - name: Publish the bundle release
+        if: steps.existing.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SERVER: ${{ steps.versions.outputs.server }}
+          WEB: ${{ steps.versions.outputs.web }}
+        run: |
+          gh release create "v${SERVER}-web${WEB}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "ReelVault v${SERVER} + web v${WEB}" \
+            --generate-notes \
+            "dist/bundles/ReelVault-${SERVER}-web${WEB}-"*".tar.gz" \
+            "dist/bundles/ReelVault-${SERVER}-web${WEB}-"*".zip" \
+            "dist/bundles/SHA256SUMS.txt"
