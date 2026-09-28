@@ -130,10 +130,7 @@ verify_checksum() {
 	fi
 
 	local sums="${TMP}/sums-${asset}"
-	fetch "https://github.com/${repo}/releases/download/${tag}/SHA256SUMS.txt" "$sums" || {
-		warn "could not download SHA256SUMS.txt for ${asset} — skipping the checksum verification"
-		return 0
-	}
+	fetch "https://github.com/${repo}/releases/download/${tag}/SHA256SUMS.txt" "$sums" || die "could not download SHA256SUMS.txt for ${asset} — refusing to install unverified"
 
 	local expected
 	expected="$(grep -E "^[0-9a-fA-F]{64}[[:space:]]+\*?${asset}\$" "${sums}" | cut -d' ' -f1 | head -1)"
@@ -166,9 +163,12 @@ resolve_tag() {
 		return
 	fi
 	log "Resolving the latest ${name} release…"
+
 	local tag
 	tag="$(api_get "https://api.github.com/repos/${repo}/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)"
 	[[ -n "$tag" ]] || die "could not resolve the latest ${name} release; pass an explicit version"
+	[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]] || die "unexpected release tag: $tag"
+
 	echo "$tag"
 }
 
@@ -317,6 +317,7 @@ unzip_to "${TMP}/web.zip" "${TMP}/ReelVault/web"
 
 mkdir -p "$TARGET_DIR"
 log "Installing to ${TARGET_DIR}…"
+rm -rf "$TARGET_DIR/server" "$TARGET_DIR/web" "$TARGET_DIR/bun"
 cp -a "${TMP}/ReelVault/." "$TARGET_DIR/"
 chmod +x "$TARGET_DIR/start.sh" "$TARGET_DIR/bun/bun"
 

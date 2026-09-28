@@ -299,8 +299,28 @@ for TARGET in "${TARGETS[@]}"; do
 	echo "    -> $(basename "$out")"
 done
 
+# 1. Bare names in SHA256SUMS.txt: install.sh and the update service match exactly.
 echo "==> Checksums"
-( cd "$OUT_DIR" && sha256sum ./"${BUNDLE_BASE}"-*.tar.gz ./"${BUNDLE_BASE}"-*.zip >SHA256SUMS.txt )
+(
+	cd "$OUT_DIR"
+	shopt -s nullglob
+	files=( "${BUNDLE_BASE}"-*.tar.gz "${BUNDLE_BASE}"-*.zip )
+	[ "${#files[@]}" -eq "${#TARGETS[@]}" ] || { echo "error: expected ${#TARGETS[@]} bundles, found ${#files[@]}" >&2; exit 1; }
+	sha256sum "${files[@]}" >SHA256SUMS.txt
+)
+
+# 2. Remove leftovers before building (right after OUT_DIR is created)
+rm -f "$OUT_DIR/${BUNDLE_BASE}"-*.tar.gz "$OUT_DIR/${BUNDLE_BASE}"-*.zip "$OUT_DIR/SHA256SUMS.txt"
+
+# 3. Anchored versions
+[[ "$SERVER_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]] || die "server version must look like 1.2.3 (got '$SERVER_VERSION')"
+[[ "$WEB_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]] || die "web version must look like 0.2.3 (got '$WEB_VERSION')"
+
+# 4. python3 zip fallback with a relative path
+ZIP_DIR() { (cd "$(dirname "$2")" && python3 -m zipfile -c "$1" "$(basename "$2")"); }
+
+# 5. curl with retries
+fetch() { curl -fsSL --retry 3 -o "$2" "$1"; }
 
 echo
 echo "Done. Bundle assets are in ${OUT_DIR}:"

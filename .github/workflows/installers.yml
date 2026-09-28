@@ -147,3 +147,4 @@ jobs:
           test -f "$work/verify/ReelVault/web/index.html"
           test -f "$work/verify/ReelVault/start.sh"
           test -f "$out/SHA256SUMS.txt"
+          ! grep -q ' \./' "$out/SHA256SUMS.txt"
