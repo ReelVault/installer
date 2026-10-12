@@ -113,7 +113,7 @@ if ($Uninstall) {
 			Remove-Item $Dir -Recurse -Force
 		} else {
 			Write-Step "Removing application files from $Dir (data\ is kept)…"
-			foreach ($name in @("bun", "server", "web", "bin", "start.bat", "settings.cmd", "README.txt")) {
+			foreach ($name in @("bun", "server", "web", "bin", "start.bat", "settings.cmd")) {
 				$path = Join-Path $Dir $name
 				if (Test-Path $path) { Remove-Item $path -Recurse -Force }
 			}

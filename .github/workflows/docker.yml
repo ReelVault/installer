@@ -1,0 +1,59 @@
+name: Docker image
+
+# Builds the server image from the latest server and web releases and pushes it
+# to GitHub Container Registry as ghcr.io/reelvault/server. It runs with the
+# Release workflow on every v* tag, or by hand from the Actions tab.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    name: Build and push the server image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve the latest component releases
+        id: versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          server="$(gh api repos/ReelVault/reelvault/releases/latest --jq .tag_name)"
+          web="$(gh api repos/ReelVault/website/releases/latest --jq .tag_name)"
+          echo "server=${server#v}" >> "$GITHUB_OUTPUT"
+          echo "web=${web#v}" >> "$GITHUB_OUTPUT"
+          echo "Resolved server ${server}, web ${web}"
+
+      - name: Build the image
+        env:
+          SERVER: ${{ steps.versions.outputs.server }}
+          WEB: ${{ steps.versions.outputs.web }}
+        run: |
+          ./scripts/build-docker.sh "$SERVER" "$WEB" --tag "ghcr.io/reelvault/server:${SERVER}-web${WEB}"
+          docker tag "ghcr.io/reelvault/server:${SERVER}-web${WEB}" ghcr.io/reelvault/server:latest
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push the image
+        env:
+          SERVER: ${{ steps.versions.outputs.server }}
+          WEB: ${{ steps.versions.outputs.web }}
+        run: |
+          docker push "ghcr.io/reelvault/server:${SERVER}-web${WEB}"
+          docker push ghcr.io/reelvault/server:latest

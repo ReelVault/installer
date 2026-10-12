@@ -255,7 +255,7 @@ uninstall() {
 			rm -rf "${TARGET_DIR}"
 		else
 			log "Removing application files from ${TARGET_DIR} (data/ is kept)…"
-			rm -rf "${TARGET_DIR}/bun" "${TARGET_DIR}/server" "${TARGET_DIR}/web" "${TARGET_DIR}/bin" "${TARGET_DIR}/start.sh" "${TARGET_DIR}/settings.env" "${TARGET_DIR}/README.txt"
+			rm -rf "${TARGET_DIR}/bun" "${TARGET_DIR}/server" "${TARGET_DIR}/web" "${TARGET_DIR}/bin" "${TARGET_DIR}/start.sh" "${TARGET_DIR}/settings.env"
 		fi
 	fi
 
